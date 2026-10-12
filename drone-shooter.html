@@ -1,0 +1,1013 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="theme-color" content="#000000">
+<title>無人機射擊訓練</title>
+<style>
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent;-webkit-touch-callout:none;-webkit-user-select:none;user-select:none}
+html,body{margin:0;height:100%;overflow:hidden;background:#000;overscroll-behavior:none;touch-action:none;
+  font-family:-apple-system,"Noto Sans TC","PingFang TC","Microsoft JhengHei",sans-serif;color:#fff}
+body{position:fixed;inset:0;width:100%}
+#game{position:fixed;inset:0;width:100%;height:100%;display:block}
+
+/* 準星：黑色外圈 + 三叉（一般 / 瞄準鏡 兩種大小，想調大小改這裡的 scale） */
+#reticle{position:fixed;left:50%;top:50%;width:66vmin;height:66vmin;margin:-33vmin 0 0 -33vmin;pointer-events:none;
+  transform:scale(.62);transition:transform .15s ease-out}
+#reticle.scoped{transform:scale(1)}
+
+/* 左半螢幕：轉視角 */
+#lookzone{position:fixed;left:0;top:0;bottom:0;width:50%;touch-action:none}
+
+.hud{position:fixed;pointer-events:none;text-shadow:0 1px 3px #000,0 0 6px #000;font-weight:700}
+#score{left:calc(14px + env(safe-area-inset-left));top:10px;font-size:16px;line-height:1.4}
+#timer{left:50%;top:8px;transform:translateX(-50%);font-size:22px}
+#heading{left:50%;top:38px;transform:translateX(-50%);font-size:13px;opacity:.9}
+#ammo{left:calc(14px + env(safe-area-inset-left));bottom:14px;font-size:26px}
+#hpText{left:calc(14px + env(safe-area-inset-left));bottom:76px;font-size:13px}
+#hpWrap{position:fixed;left:calc(14px + env(safe-area-inset-left));bottom:58px;width:150px;height:12px;
+  border:1px solid rgba(255,255,255,.85);border-radius:6px;background:rgba(0,0,0,.45);overflow:hidden;pointer-events:none}
+#hpBar{height:100%;width:100%;background:#4cd964;transition:width .15s,background .15s}
+#toast{left:50%;top:64%;transform:translateX(-50%);font-size:18px;opacity:0;transition:opacity .2s;white-space:nowrap}
+#toast.show{opacity:1}
+
+#hit{position:fixed;left:50%;top:50%;width:36px;height:36px;margin:-18px 0 0 -18px;pointer-events:none;opacity:0}
+#hit::before,#hit::after{content:"";position:absolute;left:50%;top:50%;width:34px;height:3px;margin:-1.5px 0 0 -17px;background:#ff4040;box-shadow:0 0 3px #000}
+#hit::before{transform:rotate(45deg)}
+#hit::after{transform:rotate(-45deg)}
+#hit.show{animation:hm .25s ease-out}
+@keyframes hm{0%{opacity:1;transform:scale(1.3)}100%{opacity:0;transform:scale(.8)}}
+
+#flash{position:fixed;inset:0;pointer-events:none;background:#fff;opacity:0}
+#flash.show{animation:fl .08s ease-out}
+@keyframes fl{0%{opacity:.10}100%{opacity:0}}
+
+#hurt{position:fixed;inset:0;pointer-events:none;opacity:0;
+  background:radial-gradient(circle at 50% 50%,rgba(255,0,0,0) 35%,rgba(255,20,20,.6) 100%)}
+#hurt.show{animation:hurt .6s ease-out}
+@keyframes hurt{0%{opacity:1}100%{opacity:0}}
+
+#arrow{position:fixed;left:0;top:0;font-size:34px;color:#ffd24a;pointer-events:none;display:none;text-shadow:0 0 4px #000}
+
+.btn{position:fixed;border-radius:50%;border:2px solid rgba(255,255,255,.75);background:rgba(20,30,40,.45);color:#fff;
+  display:flex;align-items:center;justify-content:center;font-weight:700;touch-action:none;text-shadow:0 1px 2px #000}
+.btn.down{background:rgba(255,255,255,.35);transform:scale(.94)}
+#fire{right:calc(26px + env(safe-area-inset-right));bottom:calc(22px + env(safe-area-inset-bottom));width:104px;height:104px;font-size:18px;background:rgba(220,50,50,.5)}
+#reload{right:calc(150px + env(safe-area-inset-right));bottom:calc(30px + env(safe-area-inset-bottom));width:70px;height:70px;font-size:14px}
+#scopeBtn{right:calc(44px + env(safe-area-inset-right));bottom:calc(140px + env(safe-area-inset-bottom));width:70px;height:70px;font-size:14px}
+#scopeBtn.on{background:rgba(255,200,60,.5)}
+#exitBtn{top:46px}
+.pill{position:fixed;right:calc(12px + env(safe-area-inset-right));top:10px;padding:6px 12px;border-radius:14px;
+  border:1px solid rgba(255,255,255,.6);background:rgba(20,30,40,.5);font-size:12px;font-weight:700;touch-action:none}
+
+.overlay{position:fixed;inset:0;background:rgba(8,14,22,.9);display:flex;flex-direction:column;align-items:center;
+  justify-content:center;gap:10px;text-align:center;padding:12px;z-index:10}
+.overlay h1{margin:0;font-size:26px}
+.overlay h2{margin:0;font-size:24px}
+.overlay p,.overlay .res{margin:0;font-size:13px;line-height:1.6;max-width:560px;opacity:.95}
+.overlay .res{font-size:16px;line-height:1.8}
+.overlay button{padding:12px 38px;font-size:18px;font-weight:700;border:none;border-radius:10px;background:#ff7a1a;color:#fff}
+.overlay label{font-size:13px}
+.overlay input[type=range]{vertical-align:middle;width:160px}
+#over{display:none}
+#rotate{position:fixed;inset:0;background:#0b1118;z-index:20;display:none;align-items:center;justify-content:center;font-size:20px;text-align:center;padding:20px}
+</style>
+</head>
+<body>
+<canvas id="game"></canvas>
+
+<!-- 準星：黑色外圈 + 中間三叉（尖端在正中央 = 瞄準點） -->
+<svg id="reticle" viewBox="0 0 100 100" aria-hidden="true">
+  <defs>
+    <clipPath id="tridentClip"><circle cx="50" cy="50" r="45"/></clipPath>
+  </defs>
+  <circle cx="50" cy="50" r="43.45" fill="none" stroke="#000" stroke-width="9.1"/>
+  <path clip-path="url(#tridentClip)" fill="#000"
+    d="M27.2 100 L27.2 71 C27.2 65 26.8 60 24.8 54.5 C23.5 51 22 48.5 21 45.5 Q20.6 41.5 24.8 39.2 Q26.6 38.8 27.4 40.6 C29 43.5 31.2 48.5 32.8 56 C33.6 60 34 64 34.8 68.8 Q35 71.2 37.5 71.3 L43 71.3 Q47.3 70.5 47.3 65.1 L47.3 50.1 L52.7 50.1 L52.7 65.1 Q52.7 70.5 57 71.3 L62.5 71.3 Q65 71.2 65.2 68.8 C66 64 66.4 60 67.2 56 C68.8 48.5 71 43.5 72.6 40.6 Q73.4 38.8 75.2 39.2 Q79.4 41.5 79 45.5 C78 48.5 76.5 51 75.2 54.5 C73.2 60 72.8 65 72.8 71 L72.8 100 Z"/>
+</svg>
+
+<div id="lookzone"></div>
+<div id="hit"></div>
+<div id="flash"></div>
+<div id="hurt"></div>
+<div id="arrow">▲</div>
+
+<div class="hud" id="score"></div>
+<div class="hud" id="timer"></div>
+<div class="hud" id="heading"></div>
+<div class="hud" id="ammo"></div>
+<div class="hud" id="hpText"></div>
+<div id="hpWrap"><div id="hpBar"></div></div>
+<div class="hud" id="toast"></div>
+
+<div class="pill" id="hintBtn">方向提示：關</div>
+<div class="pill" id="exitBtn">離開</div>
+<div class="btn" id="scopeBtn">瞄準鏡</div>
+<div class="btn" id="reload">換彈</div>
+<div class="btn" id="fire">射擊</div>
+
+<div id="menu" class="overlay">
+  <h1>無人機射擊訓練</h1>
+  <p>請橫向握持手機，戴耳機效果最好<br>
+  左半螢幕：滑動轉視角（可 360° 旋轉）<br>
+  右側按鈕：<b>射擊</b>（按住連發）、<b>換彈</b>、<b>瞄準鏡</b><br>
+  子彈採真實步槍初速，仍有飛行時間與下墜。沒有方向箭頭，用耳朵找無人機。<br>
+  <b>無人機（巡邏時速約 54 公里）會在你與 300 公尺之間來回搜索，靠近到約 100 公尺內，其中一台（一次只有一台）才會以 FPV 攻擊速度（約時速 120 公里）朝你俯衝撞擊</b>，要在撞到前擊落。子彈從它旁邊飛過時，它可能先閃開再找機會回來。被撞 3 次任務失敗，沒有時間限制，要結束可以按右上角「離開」。持槍會隨呼吸輕微晃動，連續射擊後座力明顯。</p>
+  <label>視角靈敏度 <input id="sens" type="range" min="2" max="10" step="0.5" value="4.5"></label>
+  <button id="startBtn">開始訓練</button>
+</div>
+
+<div id="over" class="overlay">
+  <h2 id="overTitle">訓練結束</h2>
+  <div class="res" id="result"></div>
+  <button id="againBtn">再玩一次</button>
+</div>
+
+<div id="rotate">請將手機橫向握持 📱</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script>
+(function(){
+'use strict';
+
+/* =========================================================
+   可調參數（想改手感就改這裡）
+   ========================================================= */
+const CFG = {
+  magSize: 30,          // 彈匣容量
+  reloadTime: 2.2,      // 換彈時間（秒）
+  fireRate: 7,          // 每秒發射數
+  bulletSpeed: 900,     // 子彈速度（公尺/秒）。約等於 5.56mm 步槍的真實槍口初速
+  gravity: 9.8,         // 子彈下墜
+  spread: 0.002,        // 散布（弧度）
+  recoil: 0.015,        // 每發後座力（弧度）。已是原本 0.010 的 1.5 倍
+  recoilYaw: 0.003,     // 每發左右隨機偏移（弧度），原本 0.002 的 1.5 倍
+  swayPitch: 0.0025,    // 持槍晃動（呼吸）上下幅度（弧度，約 0.14 度；100 公尺外約 25 公分）
+  swayYaw: 0.0016,      // 持槍晃動左右幅度（弧度）
+  breathHz: 0.25,       // 呼吸頻率（次/秒），0.25 = 每分鐘 15 次
+  swayScale: 1.0,       // 晃動整體倍率：0 = 不晃，1 = 預設，2 = 加倍
+  baseFov: 75,          // 一般視野
+  scopeFov: 22,         // 瞄準鏡視野
+  droneCount: 2,        // 同時最多幾台無人機
+  droneSpeed: 15,       // 無人機巡邏飛行速度（公尺/秒）。15 公尺/秒 = 時速 54 公里
+  patrolNearMin: 25,    // 巡邏時「靠近玩家」那一端的距離範圍（公尺）
+  patrolNearMax: 70,
+  patrolFarMin: 220,    // 巡邏時「遠處」那一端的距離範圍（公尺），無人機就在靠近與遠處之間來回飛
+  patrolFarMax: 300,
+  droneVolume: 1.0,     // 無人機聲音大小（1 = 不放大；以 10 公尺處為基準，隨距離自然變小）
+  hitRadius: 0.7,       // 命中半徑（公尺）
+  doppler: 2.0,         // 都卜勒效果倍率（1 = 真實，越大越明顯）
+  invertY: false,       // 上下視角反轉
+
+  // --- 無人機俯衝撞擊 ---
+  attackDelayMin: 8,    // 無人機出現後，幾秒發動攻擊（在這個範圍內隨機）
+  attackDelayMax: 12,
+  attackRange: 100,     // 無人機飛到離玩家多近（公尺）以內，才有機會發動攻擊
+  attackSpeed: 33.3,    // 俯衝速度（公尺/秒），FPV 攻擊無人機等級。發動瞬間全速直線衝向玩家。33.3 = 時速 120 公里
+  ramRadius: 1.6,       // 離玩家多近算撞到（公尺）
+  ramDamage: 34,        // 每次被撞扣多少血
+  playerHP: 100,        // 玩家血量
+  attackGap: 3,         // 一次攻擊結束後，至少隔幾秒才會有下一台發動攻擊（同一時間只有一台在攻擊）
+
+  // --- 無人機閃避 ---
+  threatRadius: 6,      // 子彈從無人機旁邊多近飛過，它會察覺被攻擊（公尺）
+  evadeChance: 0.6,     // 察覺後，有多大機率閃避（0~1）
+  evadeSpeed: 22,       // 閃避衝刺速度（公尺/秒）
+  evadeTime: 1.4,       // 衝刺持續秒數
+  retryMin: 5,          // 閃避後，隔幾秒才會再發動攻擊（範圍）
+  retryMax: 9
+};
+
+const $ = id => document.getElementById(id);
+const TAU = Math.PI * 2;
+const rand = (a, b) => a + Math.random() * (b - a);
+const clamp = (v, a, b) => v < a ? a : (v > b ? b : v);
+
+/* =========================================================
+   Three.js 場景
+   ========================================================= */
+const canvas = $('game');
+const renderer = new THREE.WebGLRenderer({ canvas: canvas, antialias: true, powerPreference: 'high-performance' });
+renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+const scene = new THREE.Scene();
+const SKY = 0xa9d0f0;
+scene.background = new THREE.Color(SKY);
+scene.fog = new THREE.Fog(SKY, 150, 650);
+const camera = new THREE.PerspectiveCamera(CFG.baseFov, 1, 0.1, 700);
+camera.rotation.order = 'YXZ';
+camera.position.set(0, 1.7, 0);
+
+function resize() {
+  const w = window.innerWidth, h = window.innerHeight;
+  renderer.setSize(w, h, false);
+  camera.aspect = w / h;
+  camera.updateProjectionMatrix();
+}
+window.addEventListener('resize', resize);
+window.addEventListener('orientationchange', function(){ setTimeout(resize, 200); });
+resize();
+
+function buildWorld() {
+  scene.add(new THREE.HemisphereLight(0xdfeeff, 0x4a5a3a, 0.85));
+  const sun = new THREE.DirectionalLight(0xffffff, 0.75);
+  sun.position.set(-60, 100, 40);
+  scene.add(sun);
+
+  const ground = new THREE.Mesh(new THREE.PlaneGeometry(1200, 1200), new THREE.MeshLambertMaterial({ color: 0x5d7d50 }));
+  ground.rotation.x = -Math.PI / 2;
+  scene.add(ground);
+  const grid = new THREE.GridHelper(1200, 120, 0x2f4a2a, 0x3c5a36);
+  grid.position.y = 0.02;
+  scene.add(grid);
+
+  const box = new THREE.BoxGeometry(1, 1, 1);
+
+  // 遠處建築（方向參考）
+  for (let i = 0; i < 40; i++) {
+    const w = rand(8, 22), h = rand(8, 50), d = rand(8, 22), a = rand(0, TAU), r = rand(115, 210);
+    const m = new THREE.Mesh(box, new THREE.MeshLambertMaterial({
+      color: new THREE.Color().setHSL(rand(0.55, 0.62), 0.08, rand(0.4, 0.65))
+    }));
+    m.scale.set(w, h, d);
+    m.position.set(Math.cos(a) * r, h / 2, Math.sin(a) * r);
+    m.rotation.y = rand(0, TAU);
+    scene.add(m);
+  }
+  // 近處箱子（轉動時有視差感）
+  for (let i = 0; i < 16; i++) {
+    const s = rand(1, 2.2), a = rand(0, TAU), r = rand(10, 45);
+    const m = new THREE.Mesh(box, new THREE.MeshLambertMaterial({ color: new THREE.Color().setHSL(0.08, 0.4, rand(0.3, 0.45)) }));
+    m.scale.set(s, s, s);
+    m.position.set(Math.cos(a) * r, s / 2, Math.sin(a) * r);
+    m.rotation.y = rand(0, TAU);
+    scene.add(m);
+  }
+  // 東南西北標示柱：北=紅色（-z），東=+x
+  const poles = [[0, -130, 0xff3030], [130, 0, 0xffffff], [0, 130, 0xffffff], [-130, 0, 0xffffff]];
+  poles.forEach(function(p){
+    const m = new THREE.Mesh(new THREE.CylinderGeometry(1.2, 1.2, 70, 8), new THREE.MeshLambertMaterial({ color: p[2] }));
+    m.position.set(p[0], 35, p[1]);
+    scene.add(m);
+  });
+}
+buildWorld();
+
+/* =========================================================
+   音效（Web Audio，HRTF 立體定位）
+   ========================================================= */
+let AC = null, master = null, noiseBuf = null;
+
+function initAudio() {
+  if (AC) { if (AC.state === 'suspended') AC.resume(); return; }
+  const C = window.AudioContext || window.webkitAudioContext;
+  if (!C) return;
+  AC = new C();
+  const comp = AC.createDynamicsCompressor();
+  master = AC.createGain();
+  master.gain.value = 0.9;
+  master.connect(comp);
+  comp.connect(AC.destination);
+  noiseBuf = AC.createBuffer(1, AC.sampleRate, AC.sampleRate);
+  const data = noiseBuf.getChannelData(0);
+  for (let i = 0; i < data.length; i++) data[i] = Math.random() * 2 - 1;
+  // iOS：在點擊當下播一段靜音來解鎖
+  const s = AC.createBufferSource();
+  s.buffer = AC.createBuffer(1, 1, AC.sampleRate);
+  s.connect(AC.destination);
+  s.start(0);
+  if (AC.state === 'suspended') AC.resume();
+}
+
+function makePanner() {
+  const p = AC.createPanner();
+  p.panningModel = 'HRTF';
+  p.distanceModel = 'inverse';
+  p.refDistance = 10;
+  p.maxDistance = 500;
+  p.rolloffFactor = 1.0;
+  return p;
+}
+function setPannerPos(p, v) {
+  if (p.positionX) { p.positionX.value = v.x; p.positionY.value = v.y; p.positionZ.value = v.z; }
+  else p.setPosition(v.x, v.y, v.z);
+}
+
+const _fwd = new THREE.Vector3(), _up = new THREE.Vector3();
+function updateListener() {
+  if (!AC) return;
+  const l = AC.listener;
+  _fwd.set(0, 0, -1).applyQuaternion(camera.quaternion);
+  _up.set(0, 1, 0).applyQuaternion(camera.quaternion);
+  const p = camera.position;
+  if (l.positionX) {
+    l.positionX.value = p.x; l.positionY.value = p.y; l.positionZ.value = p.z;
+    l.forwardX.value = _fwd.x; l.forwardY.value = _fwd.y; l.forwardZ.value = _fwd.z;
+    l.upX.value = _up.x; l.upY.value = _up.y; l.upZ.value = _up.z;
+  } else {
+    l.setPosition(p.x, p.y, p.z);
+    l.setOrientation(_fwd.x, _fwd.y, _fwd.z, _up.x, _up.y, _up.z);
+  }
+}
+
+// 無人機螺旋槳聲：鋸齒波 + 方波 + 調幅 + 噪音
+function makeDroneSound() {
+  const base = rand(165, 235);
+  const oscs = [];
+  const mix = AC.createGain();
+  mix.gain.value = 0.22;
+
+  const lp = AC.createBiquadFilter();
+  lp.type = 'lowpass'; lp.frequency.value = 4000; lp.Q.value = 0.5;
+  const vol = AC.createGain();
+  vol.gain.value = CFG.droneVolume;
+  const panner = makePanner();
+  mix.connect(lp); lp.connect(vol); vol.connect(panner); panner.connect(master);
+
+  function addOsc(type, mult, level) {
+    const o = AC.createOscillator();
+    o.type = type; o.frequency.value = base * mult;
+    const g = AC.createGain(); g.gain.value = level;
+    o.connect(g); g.connect(mix); o.start();
+    oscs.push({ node: o, f: base * mult });
+  }
+  addOsc('sawtooth', 1, 1);
+  addOsc('sawtooth', 1.013, 0.9);
+  addOsc('square', 2.02, 0.35);
+
+  const lfo = AC.createOscillator();
+  lfo.frequency.value = rand(34, 46);
+  const lfoG = AC.createGain(); lfoG.gain.value = 0.09;
+  lfo.connect(lfoG); lfoG.connect(mix.gain); lfo.start();
+
+  const ns = AC.createBufferSource();
+  ns.buffer = noiseBuf; ns.loop = true;
+  const bp = AC.createBiquadFilter();
+  bp.type = 'bandpass'; bp.frequency.value = 2200; bp.Q.value = 0.7;
+  const ng = AC.createGain(); ng.gain.value = 0.05;
+  ns.connect(bp); bp.connect(ng); ng.connect(lp);
+  ns.start(0, Math.random());
+
+  return {
+    oscs: oscs, panner: panner, lp: lp, vol: vol,
+    stop: function () {
+      try { oscs.forEach(function (o) { o.node.stop(); }); lfo.stop(); ns.stop(); } catch (e) {}
+      try { panner.disconnect(); } catch (e) {}
+    }
+  };
+}
+
+const _tmp = new THREE.Vector3();
+function updateDroneSound(d) {
+  const s = d.snd, t = AC.currentTime;
+  setPannerPos(s.panner, d.pos);
+  _tmp.copy(d.pos).sub(camera.position);
+  const dist = _tmp.length() || 1;
+  _tmp.divideScalar(dist);
+  const vAway = d.vel.dot(_tmp);                       // 遠離為正
+  const kDop = clamp(1 - (vAway / 343) * CFG.doppler, 0.85, 1.15);
+  const k = kDop;
+  for (let i = 0; i < s.oscs.length; i++) s.oscs[i].node.frequency.setTargetAtTime(s.oscs[i].f * k, t, 0.06);
+  s.lp.frequency.setTargetAtTime(clamp(7500 / (1 + dist / 28) + 600, 700, 8000), t, 0.1);  // 越遠越悶
+}
+
+// 一次性聲音（槍聲、爆炸、換彈…）。pos 有給就是有方向的聲音
+function playBurst(o) {
+  if (!AC) return;
+  const t = AC.currentTime;
+  const dur = Math.min(o.dur || 0.3, 0.95);
+  const src = AC.createBufferSource();
+  src.buffer = noiseBuf;
+  const f = AC.createBiquadFilter();
+  f.type = 'lowpass'; f.frequency.value = o.freq || 2000;
+  const g = AC.createGain();
+  g.gain.setValueAtTime(o.gain || 0.5, t);
+  g.gain.exponentialRampToValueAtTime(0.001, t + dur);
+  src.connect(f); f.connect(g);
+  if (o.pos) { const p = makePanner(); setPannerPos(p, o.pos); g.connect(p); p.connect(master); }
+  else g.connect(master);
+  src.start(t, Math.random() * 0.05);
+  src.stop(t + dur + 0.05);
+  if (o.thump) {
+    const so = AC.createOscillator(), sg = AC.createGain();
+    so.type = 'sine';
+    so.frequency.setValueAtTime(o.thump, t);
+    so.frequency.exponentialRampToValueAtTime(40, t + 0.15);
+    sg.gain.setValueAtTime(0.7, t);
+    sg.gain.exponentialRampToValueAtTime(0.001, t + 0.18);
+    so.connect(sg); sg.connect(master);
+    so.start(t); so.stop(t + 0.2);
+  }
+}
+function playBeep(freq, dur, vol) {
+  if (!AC) return;
+  const t = AC.currentTime;
+  const o = AC.createOscillator(), g = AC.createGain();
+  o.type = 'sine'; o.frequency.value = freq;
+  g.gain.setValueAtTime(vol, t);
+  g.gain.exponentialRampToValueAtTime(0.001, t + dur);
+  o.connect(g); g.connect(master);
+  o.start(t); o.stop(t + dur + 0.02);
+}
+
+/* =========================================================
+   遊戲狀態
+   ========================================================= */
+let state = 'menu';            // menu | playing | over
+let yaw = 0, pitch = 0, recoilOff = 0, shake = 0;
+let sens = 0.0045;
+let scoped = false, hintOn = false;
+let mag = CFG.magSize, reloading = false, reloadT = 0, fireCd = 0, firing = false;
+let elapsed = 0, swayT = 0, exitArmed = false, score = 0, kills = 0, shots = 0, hits = 0, hitDistSum = 0;
+let hp = CFG.playerHP, rams = 0, atkGap = 0;   // atkGap：一次攻擊結束後，要等幾秒才允許下一次攻擊
+let drones = [];
+const respawn = [];
+const bullets = [];
+const particles = [];
+
+/* =========================================================
+   無人機
+   ========================================================= */
+const gBody = new THREE.BoxGeometry(0.5, 0.16, 0.5);
+const gArm = new THREE.BoxGeometry(1.5, 0.05, 0.07);
+const gRotor = new THREE.CylinderGeometry(0.25, 0.25, 0.02, 14);
+const gLed = new THREE.SphereGeometry(0.06, 8, 8);
+const mBody = new THREE.MeshLambertMaterial({ color: 0x2b2f36 });
+const mArm = new THREE.MeshLambertMaterial({ color: 0x3a3f48 });
+const mRotor = new THREE.MeshLambertMaterial({ color: 0xcfd6df, transparent: true, opacity: 0.7 });
+const mLed = new THREE.MeshBasicMaterial({ color: 0xff2a2a });
+
+function buildDroneMesh() {
+  const g = new THREE.Group();
+  g.rotation.order = 'YXZ';
+  g.add(new THREE.Mesh(gBody, mBody));
+  const a1 = new THREE.Mesh(gArm, mArm); a1.rotation.y = Math.PI / 4; g.add(a1);
+  const a2 = new THREE.Mesh(gArm, mArm); a2.rotation.y = -Math.PI / 4; g.add(a2);
+  const d = 0.53;
+  [[d, d], [d, -d], [-d, d], [-d, -d]].forEach(function (p) {
+    const r = new THREE.Mesh(gRotor, mRotor);
+    r.position.set(p[0], 0.07, p[1]);
+    g.add(r);
+  });
+  const led = new THREE.Mesh(gLed, mLed);
+  led.position.set(0, -0.02, 0.27);
+  g.add(led);
+  g.userData.led = led;
+  return g;
+}
+
+// 巡邏：在「靠近玩家」與「遠處」兩種航點之間來回飛，模擬搜索玩家
+function pickWaypoint(d, near) {
+  const a = rand(0, TAU);
+  const r = near ? rand(CFG.patrolNearMin, CFG.patrolNearMax) : rand(CFG.patrolFarMin, CFG.patrolFarMax);
+  d.wp.set(Math.cos(a) * r, near ? rand(10, 35) : rand(15, 60), Math.sin(a) * r);
+  d.wpNear = near;
+}
+
+// initial = true：開局時在中距離隨機位置；false：補上的新無人機，從遠處（約 300 公尺）飛進來
+function spawnDrone(initial) {
+  const d = {
+    mesh: buildDroneMesh(),
+    wp: new THREE.Vector3(), wpNear: false,
+    pos: new THREE.Vector3(), prev: new THREE.Vector3(), vel: new THREE.Vector3(),
+    snd: null, dead: false,
+    mode: 'orbit',                                              // orbit（巡邏搜索）| attack（俯衝撞擊）| evade（閃避）
+    attackTimer: rand(CFG.attackDelayMin, CFG.attackDelayMax),  // 倒數到 0 且進入攻擊距離，才會發動攻擊
+    reactCd: 0, evT: 0, atkT: 0, curSpeed: 0, dir: new THREE.Vector3()
+  };
+  const a = rand(0, TAU);
+  if (initial) {
+    const r = rand(60, 200);
+    d.pos.set(Math.cos(a) * r, rand(15, 50), Math.sin(a) * r);
+    pickWaypoint(d, Math.random() < 0.5);
+  } else {
+    const r = rand(CFG.patrolFarMax - 20, CFG.patrolFarMax);
+    d.pos.set(Math.cos(a) * r, rand(20, 60), Math.sin(a) * r);
+    pickWaypoint(d, true);
+  }
+  d.dir.copy(d.wp).sub(d.pos).normalize();
+  d.vel.copy(d.dir).multiplyScalar(CFG.droneSpeed);
+  d.prev.copy(d.pos);
+  d.mesh.position.copy(d.pos);
+  scene.add(d.mesh);
+  if (AC) d.snd = makeDroneSound();
+  drones.push(d);
+}
+
+function hasAttacker() {
+  for (let i = 0; i < drones.length; i++) if (!drones[i].dead && drones[i].mode === 'attack') return true;
+  return false;
+}
+
+// 發現被攻擊：放棄這次俯衝，往旁邊衝刺離開
+function startEvade(d) {
+  d.mode = 'evade';
+  d.evT = 0;
+  d.mesh.userData.led.scale.setScalar(1);
+  d.mesh.rotation.x = 0;
+  _aim.copy(camera.position).sub(d.pos).normalize();            // 朝向玩家
+  _side.set(-_aim.z, 0, _aim.x).normalize();                    // 水平側向
+  const sgn = Math.random() < 0.5 ? -1 : 1;
+  d.dir.copy(_side).multiplyScalar(sgn).addScaledVector(_aim, -0.35);   // 往側邊，並略微遠離玩家
+  d.dir.y += rand(-0.25, 0.4);
+  d.dir.normalize();
+  atkGap = CFG.attackGap;
+  d.attackTimer = rand(CFG.retryMin, CFG.retryMax);             // 隔一陣子再找機會攻擊
+  toast('無人機閃避！');
+}
+
+function updateEvade(d, dt) {
+  d.evT += dt;
+  d.prev.copy(d.pos);
+  const k = 1 - 0.6 * Math.min(1, d.evT / CFG.evadeTime);       // 衝刺逐漸減速
+  d.vel.copy(d.dir).multiplyScalar(CFG.evadeSpeed * k);
+  d.pos.addScaledVector(d.vel, dt);
+  if (d.pos.y < 6) d.pos.y = 6;
+  d.mesh.position.copy(d.pos);
+  d.mesh.rotation.y = Math.atan2(d.vel.x, d.vel.z);
+  if (d.snd) updateDroneSound(d);
+  if (d.evT >= CFG.evadeTime) { pickWaypoint(d, Math.random() < 0.5); d.mode = 'orbit'; }   // 閃完回到巡邏
+}
+
+function startAttack(d) {
+  d.mode = 'attack';
+  d.atkT = 0;
+  d.curSpeed = CFG.attackSpeed;                               // 一開始就是全速
+  d.dir.copy(camera.position).sub(d.pos).normalize();         // 直接瞄準玩家，之後直線俯衝
+  d.mesh.userData.led.scale.setScalar(2.6);                   // 攻擊時紅燈變大
+  toast('⚠ 無人機發動攻擊！', true);
+  playBeep(1000, 0.1, 0.22);
+  setTimeout(function () { playBeep(1000, 0.1, 0.22); }, 160);
+}
+
+const _aim = new THREE.Vector3(), _side = new THREE.Vector3();
+function updateAttack(d, dt) {
+  d.atkT += dt;
+  d.prev.copy(d.pos);
+  d.vel.copy(d.dir).multiplyScalar(CFG.attackSpeed);         // 全速、直線前進（不左右搖晃）
+  d.pos.addScaledVector(d.vel, dt);
+  d.mesh.position.copy(d.pos);
+  d.mesh.rotation.y = Math.atan2(d.vel.x, d.vel.z);
+  d.mesh.rotation.x = Math.asin(clamp(-d.dir.y, -1, 1));      // 機頭朝下
+  if (d.snd) updateDroneSound(d);
+  if (d.pos.distanceToSquared(camera.position) < CFG.ramRadius * CFG.ramRadius) ramPlayer(d);
+}
+
+function updatePatrol(d, dt) {
+  d.prev.copy(d.pos);
+  _aim.copy(d.wp).sub(d.pos);
+  if (_aim.length() < 12) { pickWaypoint(d, !d.wpNear); _aim.copy(d.wp).sub(d.pos); }   // 到了就換另一端
+  _aim.normalize();
+  d.dir.lerp(_aim, Math.min(1, 1.2 * dt)).normalize();                                   // 平滑轉向
+  d.vel.copy(d.dir).multiplyScalar(CFG.droneSpeed);
+  d.pos.addScaledVector(d.vel, dt);
+  if (d.pos.y < 8) d.pos.y = 8;
+  d.mesh.position.copy(d.pos);
+  d.mesh.rotation.y = Math.atan2(d.vel.x, d.vel.z);
+  d.attackTimer -= dt;
+  // 一次只能有一台攻擊、兩次攻擊要隔 attackGap 秒，而且要飛到 attackRange 以內才會發動
+  if (d.attackTimer <= 0 && atkGap <= 0 && !hasAttacker() &&
+      d.pos.distanceToSquared(camera.position) <= CFG.attackRange * CFG.attackRange) startAttack(d);
+  if (d.snd) updateDroneSound(d);
+}
+
+function updateDrone(d, dt) {
+  if (d.reactCd > 0) d.reactCd -= dt;
+  if (d.mode === 'attack') updateAttack(d, dt);
+  else if (d.mode === 'evade') updateEvade(d, dt);
+  else updatePatrol(d, dt);
+}
+
+function removeDrone(d) {
+  d.dead = true;
+  scene.remove(d.mesh);
+  if (d.snd) { d.snd.stop(); d.snd = null; }
+}
+
+// 無人機撞到玩家
+function ramPlayer(d) {
+  rams++;
+  atkGap = CFG.attackGap;
+  hp = Math.max(0, hp - CFG.ramDamage);
+  explosion(d.pos);
+  playBurst({ pos: d.pos, dur: 0.8, freq: 900, gain: 2.0, thump: 70 });
+  shake = 0.05;
+  const h = $('hurt');
+  h.classList.remove('show'); void h.offsetWidth; h.classList.add('show');
+  toast('被撞擊！ -' + CFG.ramDamage, true);
+  removeDrone(d);
+  if (hp <= 0) { endGame(true); return; }
+  respawn.push(2.5);
+}
+
+/* =========================================================
+   子彈、命中、爆炸
+   ========================================================= */
+const gTracer = new THREE.CylinderGeometry(0.03, 0.03, 2.5, 5);
+gTracer.rotateX(Math.PI / 2);
+const mTracer = new THREE.MeshBasicMaterial({ color: 0xffe08a, transparent: true, opacity: 0.85 });
+for (let i = 0; i < 48; i++) {
+  const m = new THREE.Mesh(gTracer, mTracer);
+  m.visible = false;
+  scene.add(m);
+  bullets.push({ mesh: m, active: false, pos: new THREE.Vector3(), prev: new THREE.Vector3(), vel: new THREE.Vector3(), life: 0 });
+}
+const gPart = new THREE.SphereGeometry(0.14, 6, 6);
+const mPart = new THREE.MeshBasicMaterial({ color: 0xffa030 });
+for (let i = 0; i < 60; i++) {
+  const m = new THREE.Mesh(gPart, mPart);
+  m.visible = false;
+  scene.add(m);
+  particles.push({ mesh: m, active: false, vel: new THREE.Vector3(), life: 0 });
+}
+
+function explosion(pos) {
+  let n = 0;
+  for (let i = 0; i < particles.length && n < 16; i++) {
+    const p = particles[i];
+    if (p.active) continue;
+    p.active = true; p.life = rand(0.5, 0.9); n++;
+    p.mesh.position.copy(pos);
+    p.mesh.scale.setScalar(1);
+    p.mesh.visible = true;
+    p.vel.set(rand(-1, 1), rand(-0.3, 1), rand(-1, 1)).normalize().multiplyScalar(rand(5, 14));
+  }
+}
+function stepParticles(dt) {
+  for (let i = 0; i < particles.length; i++) {
+    const p = particles[i];
+    if (!p.active) continue;
+    p.life -= dt;
+    if (p.life <= 0) { p.active = false; p.mesh.visible = false; continue; }
+    p.vel.y -= 9.8 * dt;
+    p.mesh.position.addScaledVector(p.vel, dt);
+    p.mesh.scale.setScalar(Math.max(0.1, p.life * 1.4));
+  }
+}
+
+const _d = new THREE.Vector3(), _c = new THREE.Vector3();
+function segSphere(p0, p1, c, r) {
+  _d.copy(p1).sub(p0);
+  const len2 = _d.lengthSq();
+  let t = 0;
+  if (len2 > 0) t = clamp(_c.copy(c).sub(p0).dot(_d) / len2, 0, 1);
+  _c.copy(p0).addScaledVector(_d, t);
+  return _c.distanceToSquared(c) <= r * r;
+}
+
+function onHit(d) {
+  const dist = d.pos.distanceTo(camera.position);
+  const intercept = d.mode === 'attack';                 // 擊落俯衝中的無人機有加分
+  if (intercept) atkGap = CFG.attackGap;
+  const pts = Math.round(100 + dist) + (intercept ? 50 : 0);
+  score += pts; kills++; hits++; hitDistSum += dist;
+  toast((intercept ? '攔截 +' : '擊落 +') + pts + '　距離 ' + Math.round(dist) + ' m');
+  explosion(d.pos);
+  playBurst({ pos: d.pos, dur: 0.9, freq: 1200, gain: 2.5, thump: 90 });
+  playBeep(1800, 0.06, 0.18);
+  const hm = $('hit');
+  hm.classList.remove('show'); void hm.offsetWidth; hm.classList.add('show');
+  removeDrone(d);
+  respawn.push(1.2);
+}
+
+function stepBullets(dt) {
+  for (let i = 0; i < bullets.length; i++) {
+    const b = bullets[i];
+    if (!b.active) continue;
+    b.prev.copy(b.pos);
+    b.vel.y -= CFG.gravity * dt;
+    b.pos.addScaledVector(b.vel, dt);
+    b.life -= dt;
+    let hit = null;
+    for (let j = 0; j < drones.length; j++) {
+      const d = drones[j];
+      if (d.dead) continue;
+      if (segSphere(b.prev, b.pos, d.pos, CFG.hitRadius)) { hit = d; break; }
+      if (d.mode === 'attack' && d.reactCd <= 0 && segSphere(b.prev, b.pos, d.pos, CFG.threatRadius)) {
+        d.reactCd = 1.5;                                          // 避免同一發子彈連續判定
+        if (Math.random() < CFG.evadeChance) startEvade(d);
+      }
+    }
+    if (hit) { onHit(hit); b.active = false; b.mesh.visible = false; continue; }
+    if (b.pos.y < 0 || b.life <= 0) { b.active = false; b.mesh.visible = false; continue; }
+    b.mesh.position.copy(b.pos);
+    b.mesh.lookAt(b.pos.x + b.vel.x, b.pos.y + b.vel.y, b.pos.z + b.vel.z);
+  }
+}
+
+/* =========================================================
+   射擊、換彈、瞄準鏡
+   ========================================================= */
+const _dir = new THREE.Vector3(), _right = new THREE.Vector3(), _upv = new THREE.Vector3();
+function fireOne() {
+  if (reloading) return;
+  if (mag <= 0) { playBurst({ dur: 0.05, freq: 3500, gain: 0.25 }); startReload(); return; }
+  mag--; shots++;
+  // 彈道方向 = 目前準心方向（含後座力）+ 小散布
+  _dir.set(0, 0, -1).applyQuaternion(camera.quaternion);
+  _right.set(1, 0, 0).applyQuaternion(camera.quaternion);
+  _upv.set(0, 1, 0).applyQuaternion(camera.quaternion);
+  _dir.addScaledVector(_right, rand(-CFG.spread, CFG.spread)).addScaledVector(_upv, rand(-CFG.spread, CFG.spread)).normalize();
+
+  let b = null;
+  for (let i = 0; i < bullets.length; i++) if (!bullets[i].active) { b = bullets[i]; break; }
+  if (!b) b = bullets[0];
+  b.active = true; b.life = 2.2;
+  b.pos.copy(camera.position).addScaledVector(_dir, 0.5);
+  b.pos.y -= 0.05;
+  b.prev.copy(b.pos);
+  b.vel.copy(_dir).multiplyScalar(CFG.bulletSpeed);
+  b.mesh.visible = true;
+  b.mesh.position.copy(b.pos);
+
+  recoilOff += CFG.recoil * (scoped ? 0.7 : 1);
+  yaw += rand(-CFG.recoilYaw, CFG.recoilYaw);
+  playBurst({ dur: 0.35, freq: 2500, gain: 0.8, thump: 140 });
+  const fl = $('flash');
+  fl.classList.remove('show'); void fl.offsetWidth; fl.classList.add('show');
+}
+
+function startReload() {
+  if (reloading || mag >= CFG.magSize || state !== 'playing') return;
+  reloading = true;
+  reloadT = CFG.reloadTime;
+  setTimeout(function () { playBurst({ dur: 0.08, freq: 3000, gain: 0.35 }); }, 300);
+  setTimeout(function () { playBurst({ dur: 0.08, freq: 2500, gain: 0.4 }); }, 1400);
+  setTimeout(function () { playBurst({ dur: 0.06, freq: 4000, gain: 0.45 }); }, Math.max(100, CFG.reloadTime * 1000 - 150));
+}
+
+function setScope(on) {
+  scoped = on;
+  $('reticle').classList.toggle('scoped', on);
+  $('scopeBtn').classList.toggle('on', on);
+}
+
+/* =========================================================
+   輸入（Pointer Events：每根手指獨立追蹤）
+   ========================================================= */
+const look = { id: null, x: 0, y: 0 };
+const lookzone = $('lookzone');
+lookzone.addEventListener('pointerdown', function (e) {
+  if (look.id !== null) return;
+  look.id = e.pointerId; look.x = e.clientX; look.y = e.clientY;
+  try { lookzone.setPointerCapture(e.pointerId); } catch (err) {}
+  e.preventDefault();
+});
+lookzone.addEventListener('pointermove', function (e) {
+  if (e.pointerId !== look.id) return;
+  const dx = e.clientX - look.x, dy = e.clientY - look.y;
+  look.x = e.clientX; look.y = e.clientY;
+  if (state === 'playing' || state === 'menu') {
+    const s = sens * (camera.fov / CFG.baseFov);      // 瞄準鏡時靈敏度自動降低
+    yaw -= dx * s;
+    pitch -= dy * s * (CFG.invertY ? -1 : 1);
+    pitch = clamp(pitch, -1.4, 1.4);                  // 垂直限制約 ±80°
+  }
+  e.preventDefault();
+});
+function endLook(e) { if (e.pointerId === look.id) look.id = null; }
+lookzone.addEventListener('pointerup', endLook);
+lookzone.addEventListener('pointercancel', endLook);
+lookzone.addEventListener('lostpointercapture', endLook);
+
+function bindButton(el, onDown, onUp) {
+  el.addEventListener('pointerdown', function (e) {
+    e.preventDefault();
+    try { el.setPointerCapture(e.pointerId); } catch (err) {}
+    el.classList.add('down');
+    if (onDown) onDown();
+  });
+  const up = function () { el.classList.remove('down'); if (onUp) onUp(); };
+  el.addEventListener('pointerup', up);
+  el.addEventListener('pointercancel', up);
+  el.addEventListener('lostpointercapture', up);
+}
+bindButton($('fire'), function () { firing = true; }, function () { firing = false; });
+bindButton($('reload'), function () { if (state === 'playing') startReload(); });
+bindButton($('scopeBtn'), function () { if (state === 'playing') setScope(!scoped); });
+bindButton($('exitBtn'), function () {
+  if (state !== 'playing') return;
+  if (exitArmed) { exitArmed = false; $('exitBtn').textContent = '離開'; endGame(false, true); return; }
+  exitArmed = true;
+  $('exitBtn').textContent = '再按一次離開';
+  setTimeout(function () { if (exitArmed) { exitArmed = false; $('exitBtn').textContent = '離開'; } }, 2500);
+});
+bindButton($('hintBtn'), function () {
+  hintOn = !hintOn;
+  $('hintBtn').textContent = '方向提示：' + (hintOn ? '開' : '關');
+});
+
+// 防止 iOS / Android 的縮放、橡皮筋、長按選單
+document.addEventListener('gesturestart', function (e) { e.preventDefault(); });
+document.addEventListener('contextmenu', function (e) { e.preventDefault(); });
+document.addEventListener('touchmove', function (e) {
+  if (e.target && e.target.tagName === 'INPUT') return;   // 讓靈敏度滑桿可拖動
+  e.preventDefault();
+}, { passive: false });
+
+/* =========================================================
+   HUD
+   ========================================================= */
+let toastTimer = null;
+function toast(msg, warn) {
+  const t = $('toast');
+  t.textContent = msg;
+  t.style.color = warn ? '#ff6b6b' : '#fff';
+  t.classList.add('show');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(function () { t.classList.remove('show'); }, 1200);
+}
+const lastText = {};
+function setText(id, str) {
+  if (lastText[id] === str) return;
+  lastText[id] = str;
+  $(id).textContent = str;
+}
+const COMPASS = ['N 北', 'NE', 'E 東', 'SE', 'S 南', 'SW', 'W 西', 'NW'];
+function updateHud() {
+  setText('score', '分數 ' + score + '\n擊落 ' + kills);
+  $('score').style.whiteSpace = 'pre';
+  setText('timer', Math.floor(elapsed / 60) + ':' + ('0' + Math.floor(elapsed % 60)).slice(-2));
+  const deg = (((-yaw * 180 / Math.PI) % 360) + 360) % 360;
+  setText('heading', Math.round(deg) + '°  ' + COMPASS[Math.round(deg / 45) % 8]);
+  setText('ammo', reloading ? '換彈中…' : (mag + ' / ' + CFG.magSize));
+  const hpStr = 'HP ' + hp;
+  if (lastText.hpText !== hpStr) {
+    setText('hpText', hpStr);
+    const pct = Math.round(hp / CFG.playerHP * 100);
+    $('hpBar').style.width = pct + '%';
+    $('hpBar').style.background = pct <= 35 ? '#ff4040' : '#4cd964';
+  }
+}
+
+const _v = new THREE.Vector3(), _l = new THREE.Vector3();
+function updateArrow() {
+  const arrow = $('arrow');
+  if (!hintOn || state !== 'playing') { arrow.style.display = 'none'; return; }
+  // 優先指向正在俯衝的無人機，沒有的話指向最近的
+  let best = null, bd = 1e9, bestAtk = false;
+  for (let i = 0; i < drones.length; i++) {
+    const dr = drones[i];
+    const atk = dr.mode === 'attack';
+    const dd = dr.pos.distanceTo(camera.position);
+    if ((atk && !bestAtk) || (atk === bestAtk && dd < bd)) { bd = dd; best = dr; bestAtk = atk; }
+  }
+  if (!best) { arrow.style.display = 'none'; return; }
+  camera.updateMatrixWorld();
+  _l.copy(best.pos).applyMatrix4(camera.matrixWorldInverse);
+  _v.copy(best.pos).project(camera);
+  const onscreen = _l.z < 0 && Math.abs(_v.x) < 0.92 && Math.abs(_v.y) < 0.88;
+  if (onscreen) { arrow.style.display = 'none'; return; }
+  let ang = Math.atan2(_l.x, _l.y);
+  if (Math.abs(_l.x) + Math.abs(_l.y) < 1e-4) ang = Math.PI / 2;
+  const R = 0.36 * Math.min(window.innerWidth, window.innerHeight);
+  const x = window.innerWidth / 2 + Math.sin(ang) * R;
+  const y = window.innerHeight / 2 - Math.cos(ang) * R;
+  arrow.style.display = 'block';
+  arrow.style.transform = 'translate(' + x + 'px,' + y + 'px) translate(-50%,-50%) rotate(' + ang + 'rad)';
+}
+
+/* =========================================================
+   開始 / 結束
+   ========================================================= */
+function startGame() {
+  drones.forEach(function (d) { removeDrone(d); });
+  drones = [];
+  respawn.length = 0;
+  bullets.forEach(function (b) { b.active = false; b.mesh.visible = false; });
+  score = 0; kills = 0; shots = 0; hits = 0; hitDistSum = 0; rams = 0;
+  hp = CFG.playerHP; shake = 0;
+  lastText.hpText = null;
+  elapsed = 0; swayT = 0; exitArmed = false;
+  $('exitBtn').textContent = '離開';
+  mag = CFG.magSize; reloading = false; fireCd = 0; firing = false; recoilOff = 0;
+  setScope(false);
+  atkGap = 0;
+  for (let i = 0; i < CFG.droneCount; i++) spawnDrone(true);
+  $('menu').style.display = 'none';
+  $('over').style.display = 'none';
+  state = 'playing';
+}
+
+function endGame(dead, quit) {
+  state = 'over';
+  firing = false;
+  setScope(false);
+  drones.forEach(function (d) { removeDrone(d); });
+  drones = [];
+  respawn.length = 0;
+  $('arrow').style.display = 'none';
+  $('overTitle').textContent = dead ? '任務失敗：被無人機撞毀' : (quit ? '已離開訓練' : '訓練結束');
+  const acc = shots > 0 ? Math.round(hits / shots * 100) : 0;
+  const avg = hits > 0 ? Math.round(hitDistSum / hits) : 0;
+  const surv = Math.round(elapsed);
+  const survTxt = Math.floor(surv / 60) + ' 分 ' + (surv % 60) + ' 秒';
+  let best = 0;
+  try { best = parseInt(localStorage.getItem('droneShooterBest') || '0', 10) || 0; } catch (e) {}
+  const isBest = score > best;
+  if (isBest) { try { localStorage.setItem('droneShooterBest', String(score)); } catch (e) {} best = score; }
+  $('result').innerHTML =
+    '分數 <b>' + score + '</b>' + (isBest ? '　🏆 新紀錄' : '　最高 ' + best) + '<br>' +
+    '擊落 ' + kills + ' 台　命中率 ' + acc + '%（' + hits + ' / ' + shots + '）<br>' +
+    '平均擊落距離 ' + avg + ' m<br>' +
+    '被撞擊 ' + rams + ' 次　存活 ' + survTxt;
+  $('over').style.display = 'flex';
+}
+
+function goFullscreen() {
+  try {
+    const el = document.documentElement;
+    const req = el.requestFullscreen || el.webkitRequestFullscreen;
+    if (!req) return;
+    const p = req.call(el);
+    const lock = function () { try { screen.orientation.lock('landscape').catch(function () {}); } catch (e) {} };
+    if (p && p.then) p.then(lock).catch(function () {}); else lock();
+  } catch (e) {}
+}
+
+$('sens').addEventListener('input', function () { sens = parseFloat(this.value) * 0.001; });
+$('startBtn').addEventListener('click', function () {
+  sens = parseFloat($('sens').value) * 0.001;
+  initAudio();
+  goFullscreen();
+  startGame();
+});
+$('againBtn').addEventListener('click', function () { initAudio(); startGame(); });
+
+document.addEventListener('visibilitychange', function () {
+  if (!AC) return;
+  if (document.hidden) AC.suspend(); else AC.resume();
+});
+
+/* =========================================================
+   主迴圈
+   ========================================================= */
+function update(dt) {
+  recoilOff *= Math.exp(-7 * dt);
+  shake *= Math.exp(-6 * dt);
+  const tf = scoped ? CFG.scopeFov : CFG.baseFov;
+  if (Math.abs(camera.fov - tf) > 0.05) {
+    camera.fov += (tf - camera.fov) * Math.min(1, dt * 14);
+    camera.updateProjectionMatrix();
+  }
+  if (state === 'menu') yaw += dt * 0.06;
+  const sx = shake > 0.0005 ? (Math.random() - 0.5) * shake : 0;
+  const sy = shake > 0.0005 ? (Math.random() - 0.5) * shake : 0;
+  // 持槍晃動（呼吸）：幾個不同頻率的緩慢波疊在一起，上下較明顯、左右較小、不規則；準星與子彈方向都會跟著晃
+  let swP = 0, swY = 0;
+  if (state === 'playing') {
+    swayT += dt;
+    const w = TAU * CFG.breathHz, T = swayT;
+    swP = CFG.swayPitch * CFG.swayScale * (0.8 * Math.sin(w * T) + 0.35 * Math.sin(TAU * 0.37 * T + 1.3) + 0.2 * Math.sin(TAU * 0.83 * T + 0.4));
+    swY = CFG.swayYaw * CFG.swayScale * (0.8 * Math.sin(w * 0.5 * T + 0.9) + 0.4 * Math.sin(TAU * 0.29 * T + 2.1) + 0.2 * Math.sin(TAU * 0.71 * T));
+  }
+  camera.rotation.set(clamp(pitch + recoilOff + sx + swP, -1.5, 1.5), yaw + sy + swY, 0);
+
+  if (state === 'playing') {
+    elapsed += dt;
+  }
+  if (state === 'playing') {
+    fireCd -= dt;
+    atkGap = Math.max(0, atkGap - dt);
+    if (reloading) {
+      reloadT -= dt;
+      if (reloadT <= 0) { reloading = false; mag = CFG.magSize; }
+    }
+    if (firing && fireCd <= 0) { fireOne(); fireCd = 1 / CFG.fireRate; }
+
+    for (let i = 0; i < drones.length; i++) updateDrone(drones[i], dt);
+    for (let i = respawn.length - 1; i >= 0; i--) {
+      respawn[i] -= dt;
+      if (respawn[i] <= 0) { respawn.splice(i, 1); spawnDrone(false); }
+    }
+    stepBullets(dt);
+    if (drones.some(function (d) { return d.dead; })) drones = drones.filter(function (d) { return !d.dead; });
+  }
+  stepParticles(dt);
+  updateListener();
+  if (state === 'playing') { updateHud(); updateArrow(); }
+}
+
+let last = performance.now();
+let lastPortrait = null;
+function loop(now) {
+  requestAnimationFrame(loop);
+  const dt = Math.min(0.05, (now - last) / 1000);
+  last = now;
+  const portrait = window.innerHeight > window.innerWidth;
+  if (portrait !== lastPortrait) {
+    lastPortrait = portrait;
+    $('rotate').style.display = portrait ? 'flex' : 'none';
+  }
+  if (!portrait) update(dt);
+  renderer.render(scene, camera);
+}
+requestAnimationFrame(loop);
+
+})();
+</script>
+</body>
+</html>
